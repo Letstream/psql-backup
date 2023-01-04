@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  labels:
+    jobgroup: postgres-backup
+spec:
+  # Backup the database every day at 12AM
+  schedule: "0 0 0 ? * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    metadata:
+      name: postgres-backup
+      labels:
+        jobgroup: postgres-backup
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            # Support the Bitnami Postgres Clsuters
+            "db-postgresql-ha-client": "true"
+        spec:
+          containers:
+          - name: postgres-backup
+            image: registry.gitlab.com/letstream/psql-backup:latest
+            imagePullPolicy: Always
+            command: ["/bin/bash"]
+            args: ["-c", 'mc config host add backup_host $AWS_S3_HOST $AWS_ACCESS_KEY $AWS_ACCESS_SECRET && echo "Backup Started!" && pg_dump -U $DB_USER -h $DB_HOST -p DB_PORT DB_NAME | mc pipe backup_host/$AWS_BUCKET_NAME/$(date +"%Y")/$(date +"%m")/$(date +"%d")/backup-$(date +"%Y-%m-%d-%H-%M").sql && echo "Backup Finished!"'] 
+            envFrom:
+              - secretRef: 
+                  name: backup-secrets
+          restartPolicy: Never
+          nodeSelector:
+            kubernetes.io/os: linux
+
